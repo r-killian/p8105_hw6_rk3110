@@ -27,6 +27,8 @@ options(
 
 scale_colour_discrete = scale_colour_viridis_d
 scale_fill_discrete = scale_fill_viridis_d
+
+set.seed(8105)
 ```
 
 # Problem 1
@@ -44,29 +46,40 @@ birth_df =
     malform = recode_factor(malform, `0` = "absent", `1` = "present")
   )
 
-sum(is.na(birth_df))
+colSums(is.na(birth_df))
 ```
 
 No missing observations
 
 
-Propose a regression model for birthweight. This model may be based on a hypothesized structure for the factors that underly birthweight, on a data-driven model-building process, or a combination of the two. Describe your modeling process and show a plot of model residuals against fitted values – use add_predictions and add_residuals in making this plot.
+### Propose a regression model for birthweight.
 
-After doing some general research on known risk-factors of low birth weight I will start to build a model by examining the effects of length at birth, gestational age, sex, and cigarettes smoked on birth weight.
+After doing some general research on known risk-factors of low birth weight I will start to build a model by examining the effects of length at birth, head circumference, gestational age, sex, cigarettes smoked, income, presence of malformations, mother's age, parental race, and mother's pre-pregnancy BMI and weight gain on birth weight.
 
-Based on the literature, I would also have included parity, number of previous low birth weight babies, and number of previous small for gestational age babies, but almost every value for parity is zero (total previous births = `r sum(pull(birth_df, parity))` with range `r min(pull(birth_df, parity))` - `r max(pull(birth_df, parity))`) and no observation in the sample has a previous low birth weight or small for gestational age baby.
+Based on the literature, I would like to include parity, number of previous low birth weight babies, and number of previous small for gestational age babies, but almost every value for parity is zero (total previous births = `r sum(pull(birth_df, parity))` with range `r min(pull(birth_df, parity))` - `r max(pull(birth_df, parity))`) and no observation in the sample has a previous low birth weight or small for gestational age baby. Therefore, these variables were excluded.
 
 ```{r, model 1}
-fit = lm(bwt ~ blength + gaweeks + babysex + smoken, data = birth_df)
+my_mod = lm(bwt ~ blength + bhead + gaweeks + babysex + smoken + fincome + malform + momage + frace + mrace + ppbmi + wtgain, data = birth_df)
 
-fit %>% 
+my_mod %>% 
+  broom::tidy() %>% 
+  select(term, estimate, p.value) %>% 
+  knitr::kable(digits = 3)
+```
+
+Looks like `malform`, `momage` and `frace` are all non-significant. Removing them from the model and re-running:
+
+```{r, model 1.2}
+my_mod = lm(bwt ~ blength + bhead + gaweeks + babysex + smoken + fincome + mrace + ppbmi + wtgain, data = birth_df)
+
+my_mod %>% 
   broom::tidy() %>% 
   select(term, estimate, p.value) %>% 
   knitr::kable(digits = 3)
 
 birth_df %>% 
-  modelr::add_residuals(fit) %>% 
-  modelr::add_predictions(fit) %>% 
+  modelr::add_residuals(my_mod) %>% 
+  modelr::add_predictions(my_mod) %>% 
   ggplot(aes(x = pred, y = resid, alpha = 0.3)) +
   geom_point()
 ```
@@ -77,16 +90,16 @@ Compare your model to two others:
 * One using length at birth and gestational age as predictors (main effects only)
 
 ```{r, model 2}
-fit_2 = lm(bwt ~ blength + gaweeks, data = birth_df)
+main_mod = lm(bwt ~ blength + gaweeks, data = birth_df)
 
-fit_2 %>% 
+main_mod %>% 
   broom::tidy() %>% 
   select(term, estimate, p.value) %>% 
   knitr::kable(digits = 3)
 
 birth_df %>% 
-  modelr::add_residuals(fit_2) %>% 
-  modelr::add_predictions(fit_2) %>% 
+  modelr::add_residuals(main_mod) %>% 
+  modelr::add_predictions(main_mod) %>% 
   ggplot(aes(x = pred, y = resid, alpha = 0.3)) +
   geom_point()
   
@@ -96,24 +109,62 @@ birth_df %>%
 * One using head circumference, length, sex, and all interactions (including the three-way interaction) between these
 
 ```{r, model 3}
-fit_3 = lm(bwt ~ bhead + blength + babysex + bhead * blength + bhead * babysex + blength * babysex + blength * bhead * babysex, data = birth_df)
+interaction_mod = lm(bwt ~ blength * bhead * babysex, data = birth_df)
 
-fit_3 %>% 
+interaction_mod %>% 
   broom::tidy() %>% 
   select(term, estimate, p.value) %>% 
   knitr::kable(digits = 3)
 
 birth_df %>% 
-  modelr::add_residuals(fit_3) %>% 
-  modelr::add_predictions(fit_3) %>% 
+  modelr::add_residuals(interaction_mod) %>% 
+  modelr::add_predictions(interaction_mod) %>% 
   ggplot(aes(x = pred, y = resid, alpha = 0.3)) +
   geom_point()
 ```
 
+### Cross Validation
 
-Make this comparison in terms of the cross-validated prediction error; use crossv_mc and functions in purrr as appropriate.
+Make this comparison in terms of the cross-validated prediction error.
 
-Note that although we expect your model to be reasonable, model building itself is not a main idea of the course and we don’t necessarily expect your model to be “optimal”.
+```{r, cv}
+cv_df = 
+  crossv_mc(birth_df, 100) %>% 
+  mutate(
+    train = map(train, as_tibble),
+    test = map(test, as_tibble)
+  )
+
+cv_df = 
+  cv_df %>% 
+  mutate(
+   my_mod = map(train, ~lm(bwt ~ blength + bhead + gaweeks + babysex + smoken + fincome + mrace + ppbmi + wtgain, data = .x)),
+   main_mod = map(train, ~lm(bwt ~ blength + gaweeks, data = .x)),
+   interaction_mod = map(train, ~lm(bwt ~ bhead * blength * babysex, data = .x))
+  ) %>% 
+  mutate(
+    rmse_mine = map2_dbl(my_mod, test, ~rmse(model = .x, data = .y)),
+    rmse_main = map2_dbl(main_mod, test, ~rmse(model = .x, data = .y)),
+    rmse_interaction = map2_dbl(interaction_mod, test, ~rmse(model = .x, data = .y))
+  )
+```
+
+Plotting the results:
+
+```{r}
+cv_df %>% 
+  select(starts_with("rmse")) %>% 
+  pivot_longer(
+    everything(),
+    names_to = "model", 
+    values_to = "rmse",
+    names_prefix = "rmse_") %>% 
+  mutate(model = fct_inorder(model)) %>% 
+  ggplot(aes(x = model, y = rmse)) +
+  geom_boxplot()
+```
+
+My model has the lowest RMSE of all the models. By this metric my model performs much better than the main effects model and slightly better than the interaction model. The main effects model is the worst fit for the data with the highest RMSE.
 
 # Problem 2
 
