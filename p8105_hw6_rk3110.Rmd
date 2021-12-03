@@ -58,7 +58,7 @@ After doing some general research on known risk-factors of low birth weight I wi
 
 Based on the literature, I would like to include parity, number of previous low birth weight babies, and number of previous small for gestational age babies, but almost every value for parity is zero (total previous births = `r sum(pull(birth_df, parity))` with range `r min(pull(birth_df, parity))` - `r max(pull(birth_df, parity))`) and no observation in the sample has a previous low birth weight or small for gestational age baby. Therefore, these variables were excluded.
 
-```{r, model 1}
+```{r, model 1.1}
 my_mod = lm(bwt ~ blength + bhead + gaweeks + babysex + smoken + fincome + malform + momage + frace + mrace + ppbmi + wtgain, data = birth_df)
 
 my_mod %>% 
@@ -151,7 +151,7 @@ cv_df =
 
 Plotting the results:
 
-```{r}
+```{r, cv plot}
 cv_df %>% 
   select(starts_with("rmse")) %>% 
   pivot_longer(
@@ -182,16 +182,8 @@ weather_df =
   select(name, id, everything())
 ```
 
-The boostrap is helpful when you’d like to perform inference for a parameter / value / summary that doesn’t have an easy-to-write-down distribution in the usual repeated sampling framework. We’ll focus on a simple linear regression with tmax as the response and tmin as the predictor, and are interested in the distribution of two quantities estimated from these data:
 
-* r^2
-
-* log(β^0∗β^1)
-
-Use 5000 bootstrap samples and, for each bootstrap sample, produce estimates of these two quantities. Plot the distribution of your estimates, and describe these in words. Using the 5000 bootstrap estimates, identify the 2.5% and 97.5% quantiles to provide a 95% confidence interval for r^2
-and log(β^0∗β^1). Note: broom::glance() is helpful for extracting r^2 from a fitted regression, and broom::tidy() (with some additional wrangling) should help in computing log(β^0∗β^1).
-
-```{r}
+```{r, bootstrapping}
 boot_straps = 
   weather_df %>% 
   modelr::bootstrap(n = 5000) %>% 
@@ -222,18 +214,58 @@ bootstrap_results =
 
 First let's look at r^2:
 
-```{r}
+```{r, r square plot}
 bootstrap_results %>% 
   ggplot(aes(x = r.squared)) +
   geom_density() + 
+  labs(
+    x = "R-squared estimates",
+    y = "Density"
+  ) +
   ggtitle("Distribution of R squared in 5,000 bootstrap samples")
 ```
 
+The distribution of r^2 estimates appears to follow a normal distribution and is centered around 0.91.
+
 Now looking at log(β^0∗β^1):
 
-```{r}
+```{r, log plot}
 bootstrap_results %>% 
   ggplot(aes(x = log_b0_b1)) +
   geom_density() + 
+  labs(
+    x = "Log(B1*B0) estimates",
+    y = "Density"
+  ) +
   ggtitle("Distribution of Log(B0 * B1) in 5,000 bootstrap samples")
 ```
+
+The distribution of log(β^0∗β^1) estimates appears to follow a normal distribution and is centered around 2.01
+
+### 95% Confidence Intervals
+
+Looking at r-squared first:
+
+```{r, ci r square}
+bootstrap_results %>% 
+  summarise(
+    lower = quantile(r.squared, 0.025),
+    upper = quantile(r.squared, 0.975)
+  ) %>% 
+  knitr::kable()
+```
+
+The 95% confidence interval for the r-squared estimates is (0.89, 0.93).
+
+Continuing with log(β^0∗β^1):
+
+```{r, ci log}
+bootstrap_results %>% 
+  summarise(
+    lower = quantile(log_b0_b1, 0.025),
+    upper = quantile(log_b0_b1, 0.975)
+  ) %>% 
+  knitr::kable()
+```
+
+The 95% confidence interval for the log(β^0∗β^1) estimates is (1.96, 2.06).
