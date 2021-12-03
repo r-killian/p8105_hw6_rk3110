@@ -200,8 +200,40 @@ boot_straps =
     glance = map(models, broom::glance),
     results = map(models, broom::tidy)
   ) %>%
+  select(-strap, -models) %>% 
   unnest(results) %>% 
   unnest(glance, names_repair = "universal") %>% 
-  select(strap, .id, models, r.squared, term, estimate)
+  select(.id, r.squared, term, estimate)
+
+bootstrap_results = 
+  boot_straps %>% 
+    mutate(
+      term = if_else(term == "tmin", "tmin", "Intercept")) %>% 
+  pivot_wider(
+    names_from = "term",
+    values_from = "estimate"
+  ) %>% 
+  mutate(
+    log_b0_b1 = log(Intercept) + log(tmin)
+  )
 ```
 
+### Plotting
+
+First let's look at r^2:
+
+```{r}
+bootstrap_results %>% 
+  ggplot(aes(x = r.squared)) +
+  geom_density() + 
+  ggtitle("Distribution of R squared in 5,000 bootstrap samples")
+```
+
+Now looking at log(β^0∗β^1):
+
+```{r}
+bootstrap_results %>% 
+  ggplot(aes(x = log_b0_b1)) +
+  geom_density() + 
+  ggtitle("Distribution of Log(B0 * B1) in 5,000 bootstrap samples")
+```
