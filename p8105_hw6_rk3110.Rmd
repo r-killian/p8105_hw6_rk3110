@@ -84,6 +84,7 @@ birth_df %>%
   geom_point()
 ```
 
+The plot of residuals vs. predicted values shows that the points are largely grouped around zero, indicating that the fit of the model is decent. 
 
 Compare your model to two others:
 
